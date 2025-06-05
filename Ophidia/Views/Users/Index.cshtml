@@ -1,0 +1,21 @@
+﻿@*
+Users view
+*@
+@{
+}
+@model IEnumerable<Ophidia.Models.User>
+
+<h2>Users</h2>
+
+<ul>
+    @foreach (Ophidia.Models.User user in Model)
+    {
+        <li>@user.Id - @user.Username</li>
+    }
+</ul>
+
+<form asp-action="Create" method="post">
+    <input name="username" placeholder="Enter username" />
+    <button type="submit">Add</button>
+</form>
+
