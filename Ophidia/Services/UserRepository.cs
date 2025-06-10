@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using Microsoft.Data.Sqlite;
 using Ophidia.Models;
+using Ophidia.Models.Dto;
 
 namespace Ophidia.Services
 {
@@ -8,71 +9,112 @@ namespace Ophidia.Services
     {
         private readonly string _connectionString;
 
-        // --
+        /// <summary>
+        /// Constructor that reads the connection string from appsettings.json.
+        /// If it contains a relative path, it is resolved based on the ContentRootPath.
+        /// Works across Windows, Linux, macOS(test?), and containers(test?).
+        /// </summary>
         public UserRepository(IConfiguration configuration, IWebHostEnvironment env)
         {
             string rawConnection = configuration.GetConnectionString("Default") ?? "";
 
-            // If using a relative path in appsettings, resolve it from content root
-            if (rawConnection.Contains("AppData"))
+            const string dataSourcePrefix = "Data Source=";
+            if (!rawConnection.StartsWith(dataSourcePrefix, StringComparison.OrdinalIgnoreCase))
             {
-                string fullPath = Path.Combine(env.ContentRootPath, "AppData", "mydb.sqlite");
-                Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-                _connectionString = $"Data Source={fullPath}";
+                string pError = "Invalid SQLite connection string format";
+                throw new InvalidOperationException(pError);
             }
-            else
+
+            string dbRelativePath = rawConnection.Substring(dataSourcePrefix.Length);
+            string dbPath = Path.Combine(env.ContentRootPath, dbRelativePath);
+            string dbFullPath = Path.GetFullPath(dbPath);
+
+            string directory = Path.GetDirectoryName(dbFullPath) ?? "";
+            if (!string.IsNullOrEmpty(directory))
             {
-                _connectionString = rawConnection;
+                Directory.CreateDirectory(directory);
             }
+
+            _connectionString = $"Data Source={dbFullPath}";
 
             EnsureDatabase();
         }
 
-        // --
+        /// <summary>
+        /// Fallback constructor for development use. Hardcoded to use AppData/mydb.sqlite relative to ContentRootPath.
+        /// </summary>
         public UserRepository(IWebHostEnvironment env)
         {
             string dbPath = Path.Combine(env.ContentRootPath, "AppData", "mydb.sqlite");
-            Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+
+            string directory = Path.GetDirectoryName(dbPath) ?? "";
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             _connectionString = $"Data Source={dbPath}";
 
             EnsureDatabase();
         }
 
-        // --
+        /// <summary>
+        /// Ensures the Users table exists in the database. Seeds the admin user if no records are found.
+        /// </summary>
         private void EnsureDatabase()
         {
-            using SqliteConnection connection = new SqliteConnection(_connectionString);
-            connection.Open();
-
-            string tableCommand = @"
-CREATE TABLE IF NOT EXISTS Users (
-Id INTEGER PRIMARY KEY AUTOINCREMENT,
-Username TEXT NOT NULL
-);
-";
-            connection.Execute(tableCommand);
-
-            // Seed one row if empty
-            int count = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Users");
-            if (count == 0)
-            {
-                connection.Execute("INSERT INTO Users (Username) VALUES (@name)", new { name = "admin" });
+            SqliteConnection connection = new SqliteConnection(_connectionString);
+            using (connection)
+            {            
+                connection.Open();
+    
+                string tableCommand = @"
+    CREATE TABLE IF NOT EXISTS Users (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    Username TEXT NOT NULL
+    );
+    ";
+                connection.Execute(tableCommand);
+    
+                string userCountQuery = @"SELECT COUNT(*) FROM Users";
+                int count = connection.ExecuteScalar<int>(userCountQuery);
+                if (count == 0)
+                {
+                    string insertUserCmd = @"INSERT INTO Users (Username) VALUES (@username)";
+                    UserInsertParameters parameters = new UserInsertParameters()
+                    {
+                        Username = "admin"
+                    };
+                    connection.Execute(insertUserCmd, parameters);
+                }
             }
         }
 
-        // --
+        /// <summary>
+        /// Returns all users in the Users table.
+        /// </summary>
         public IEnumerable<User> GetAllUsers()
         {
+            const string sql = @"SELECT * FROM Users";
             using SqliteConnection connection = new SqliteConnection(_connectionString);
-            return connection.Query<User>("SELECT * FROM Users");
+            return connection.Query<User>(sql);
         }
 
-        // --
+        /// <summary>
+        /// Adds a new user to the Users table.
+        /// </summary>
         public void AddUser(string username)
         {
             string insertCmd = @"INSERT INTO Users (Username) VALUES (@username)";
-            using SqliteConnection connection = new SqliteConnection(_connectionString);
-            connection.Execute(insertCmd, new { username });
+            UserInsertParameters parameters = new UserInsertParameters()
+            {
+                Username = username
+            };
+            SqliteConnection connection = new SqliteConnection(_connectionString);
+            using (connection)
+            {
+                connection.Execute(insertCmd, parameters);
+            }
         }
     }
 }
