@@ -26,6 +26,7 @@ namespace Ophidia.Services
             }
 
             string dbRelativePath = rawConnection.Substring(dataSourcePrefix.Length);
+            // Example C:\Users\USER\source\repos\Ophidia\Ophidia\AppData/dev.sqlite
             string dbPath = Path.Combine(env.ContentRootPath, dbRelativePath);
             string dbFullPath = Path.GetFullPath(dbPath);
 
@@ -96,8 +97,13 @@ namespace Ophidia.Services
         public IEnumerable<User> GetAllUsers()
         {
             const string sql = @"SELECT * FROM Users";
-            using SqliteConnection connection = new SqliteConnection(_connectionString);
-            return connection.Query<User>(sql);
+            IEnumerable<User> users;
+            SqliteConnection connection = new SqliteConnection(_connectionString);
+            using (connection) 
+            {
+                users = connection.Query<User>(sql);
+            }
+            return users;
         }
 
         /// <summary>

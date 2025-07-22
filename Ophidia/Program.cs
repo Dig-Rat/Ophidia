@@ -1,3 +1,4 @@
+using Ophidia.Middleware;
 using Ophidia.Services;
 
 namespace Ophidia
@@ -13,6 +14,14 @@ namespace Ophidia
             builder.Services.AddSingleton<DatabaseService>();
             builder.Services.AddSingleton<UserRepository>();
 
+            // add database connection
+            //builder.Services
+
+            builder.Services.AddSingleton<MetadataLogger>(provider =>
+            {
+                string dbPath = "Data Source=app.db"; // Update path as needed
+                return new MetadataLogger(dbPath);
+            });
 
             WebApplication app = builder.Build();
 
@@ -33,10 +42,12 @@ namespace Ophidia
 
             app.UseAuthorization();
 
+            app.UseMiddleware<VisitorLoggingMiddleware>();
+
             app.MapControllerRoute(
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
-
+            
             app.Run();
         }
     }
